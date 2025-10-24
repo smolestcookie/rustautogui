@@ -6,12 +6,16 @@ use crate::{imgtools, AutoGuiError};
 #[cfg(not(feature = "lite"))]
 use image::{GrayImage, ImageBuffer, Luma, Rgba};
 use std::mem::size_of;
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::{GetLastError, POINT};
 use windows::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
-    ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC,
-    HGDIOBJ, RGBQUAD, SRCCOPY,
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
+    EnumDisplaySettingsW, GetDC, GetDIBits, GetMonitorInfoW, MonitorFromPoint, ReleaseDC,
+    SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DEVMODEW, DIB_RGB_COLORS,
+    ENUM_CURRENT_SETTINGS, HBITMAP, HDC, HGDIOBJ, MONITORINFOEXW, MONITOR_DEFAULTTOPRIMARY,
+    RGBQUAD, SRCCOPY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+use windows_result::BOOL;
 
 #[derive(Debug, Clone)]
 pub struct Screen {
@@ -31,12 +35,43 @@ pub struct ScreenImgData {
     h_bitmap: HBITMAP,
 }
 
+unsafe fn check_bool(identifier: &str, result: BOOL) -> Result<(), AutoGuiError> {
+    match result.as_bool() {
+        true => Ok(()),
+        false => Err(AutoGuiError::OSFailure(format!(
+            "{} failed 0x{:X}",
+            identifier,
+            GetLastError().0
+        ))),
+    }
+}
+
+unsafe fn get_screen_dimensions() -> Result<(i32, i32), AutoGuiError> {
+    let monitor = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+    let mut info: MONITORINFOEXW = Default::default();
+    info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
+    check_bool(
+        "GetMonitorInfoW",
+        GetMonitorInfoW(monitor, &mut info.monitorInfo),
+    )?;
+    let mut dev_mode: DEVMODEW = Default::default();
+    dev_mode.dmSize = size_of::<DEVMODEW>() as u16;
+    check_bool(
+        "EnumDisplaySettingsW",
+        EnumDisplaySettingsW(
+            PCWSTR(info.szDevice.as_mut_ptr()),
+            ENUM_CURRENT_SETTINGS,
+            &mut dev_mode,
+        ),
+    )?;
+    Ok((dev_mode.dmPelsWidth as i32, dev_mode.dmPelsHeight as i32))
+}
+
 impl Screen {
     ///Creates struct that holds information about screen
     pub fn new() -> Result<Self, AutoGuiError> {
         unsafe {
-            let screen_width: i32 = GetSystemMetrics(SM_CXSCREEN);
-            let screen_height = GetSystemMetrics(SM_CYSCREEN);
+            let (screen_width, screen_height) = get_screen_dimensions()?;
 
             #[cfg(not(feature = "lite"))]
             let screen_data = ScreenImgData {
