@@ -26,6 +26,7 @@ impl crate::RustAutoGui {
         match_mode: MatchMode,
         alias: Option<&str>,
         user_threshold: Option<f32>,
+        mut mask: Option<ImageBuffer<Luma<u8>, Vec<u8>>>,
     ) -> Result<(), AutoGuiError> {
         // resize and adjust if retina screen is used
         // prepare additionally backup template for 2 screen size variants
@@ -62,6 +63,12 @@ impl crate::RustAutoGui {
             }
         }
         let (template_width, template_height) = template.dimensions();
+        if let Some(mask) = mask.as_ref() {
+            let (mask_width, mask_height) = mask.dimensions();
+            if mask_width != template_width || mask_height != template_height {
+                return Err(AutoGuiError::OutOfBoundsError("Mask dimensions should match template dimensions.".to_string()));
+            }
+        }
 
         // if no region provided, grab whole screen
         let region = match region {
@@ -89,6 +96,7 @@ impl crate::RustAutoGui {
                 let prepared_data =
                     PreparedData::FFT(template_match::fft_ncc::prepare_template_picture(
                         &template, region.2, region.3,
+                        mask.as_ref(),
                     ));
                 let match_mode = Some(MatchMode::FFT);
                 (prepared_data, match_mode)
@@ -100,6 +108,7 @@ impl crate::RustAutoGui {
                         &template,
                         &self.debug,
                         user_threshold,
+                        mask.as_ref(),
                     );
                 if let PreparedData::Segmented(ref segmented) = prepared_data {
                     // mostly happens due to using too complex image with small max segments value
@@ -122,6 +131,7 @@ impl crate::RustAutoGui {
                         &template,
                         &self.debug,
                         user_threshold,
+                        mask.as_ref(),
                     );
                 let prepared_data: SegmentedData = if let PreparedData::Segmented(segmented) =
                     prepared_data
@@ -281,8 +291,8 @@ impl crate::RustAutoGui {
         region: Option<(u32, u32, u32, u32)>,
         match_mode: MatchMode,
     ) -> Result<(), AutoGuiError> {
-        let template: ImageBuffer<Luma<u8>, Vec<u8>> = imgtools::load_image_bw(template_path)?;
-        self.prepare_template_picture_bw(template, region, match_mode, None, None)
+        let (template, mask) = imgtools::load_image_bwa(template_path)?;
+        self.prepare_template_picture_bw(template, region, match_mode, None, None, mask)
     }
     #[cfg(not(feature = "lite"))]
     /// Loads template from file on provided path
@@ -293,8 +303,8 @@ impl crate::RustAutoGui {
         match_mode: MatchMode,
         threshold: f32,
     ) -> Result<(), AutoGuiError> {
-        let template: ImageBuffer<Luma<u8>, Vec<u8>> = imgtools::load_image_bw(template_path)?;
-        self.prepare_template_picture_bw(template, region, match_mode, None, Some(threshold))
+        let (template, mask) = imgtools::load_image_bwa(template_path)?;
+        self.prepare_template_picture_bw(template, region, match_mode, None, Some(threshold), mask)
     }
     #[cfg(not(feature = "lite"))]
     /// prepare from imagebuffer, works only on types RGB/RGBA/Luma
@@ -310,7 +320,7 @@ impl crate::RustAutoGui {
     {
         let color_scheme = imgtools::check_imagebuffer_color_scheme(&image)?;
         let luma_img = imgtools::convert_t_imgbuffer_to_luma(&image, color_scheme)?;
-        self.prepare_template_picture_bw(luma_img, region, match_mode, None, None)?;
+        self.prepare_template_picture_bw(luma_img, region, match_mode, None, None, None)?;
         Ok(())
     }
 
@@ -328,7 +338,7 @@ impl crate::RustAutoGui {
     {
         let color_scheme = imgtools::check_imagebuffer_color_scheme(&image)?;
         let luma_img = imgtools::convert_t_imgbuffer_to_luma(&image, color_scheme)?;
-        self.prepare_template_picture_bw(luma_img, region, match_mode, None, Some(threshold))?;
+        self.prepare_template_picture_bw(luma_img, region, match_mode, None, Some(threshold), None)?;
         Ok(())
     }
 
@@ -341,7 +351,7 @@ impl crate::RustAutoGui {
         match_mode: MatchMode,
     ) -> Result<(), AutoGuiError> {
         let image = image::load_from_memory(img_raw)?;
-        self.prepare_template_picture_bw(image.to_luma8(), region, match_mode, None, None)
+        self.prepare_template_picture_bw(image.to_luma8(), region, match_mode, None, None, None)
     }
 
     #[cfg(not(feature = "lite"))]
@@ -360,6 +370,7 @@ impl crate::RustAutoGui {
             match_mode,
             None,
             Some(threshold),
+            None,
         )
     }
 
@@ -374,8 +385,8 @@ impl crate::RustAutoGui {
         alias: &str,
     ) -> Result<(), AutoGuiError> {
         // RustAutoGui::check_alias_name(&alias)?;
-        let template: ImageBuffer<Luma<u8>, Vec<u8>> = imgtools::load_image_bw(template_path)?;
-        self.prepare_template_picture_bw(template, region, match_mode, Some(alias), None)
+        let (template, mask) = imgtools::load_image_bwa(template_path)?;
+        self.prepare_template_picture_bw(template, region, match_mode, Some(alias), None, mask)
     }
 
     #[cfg(not(feature = "lite"))]
@@ -389,8 +400,8 @@ impl crate::RustAutoGui {
         threshold: f32,
     ) -> Result<(), AutoGuiError> {
         // RustAutoGui::check_alias_name(&alias)?;
-        let template: ImageBuffer<Luma<u8>, Vec<u8>> = imgtools::load_image_bw(template_path)?;
-        self.prepare_template_picture_bw(template, region, match_mode, Some(alias), Some(threshold))
+        let (template, mask) = imgtools::load_image_bwa(template_path)?;
+        self.prepare_template_picture_bw(template, region, match_mode, Some(alias), Some(threshold), mask)
     }
     #[cfg(not(feature = "lite"))]
     /// Load template from imagebuffer and store prepared template data for multiple image search
@@ -408,7 +419,7 @@ impl crate::RustAutoGui {
         // RustAutoGui::check_alias_name(&alias)?;
         let color_scheme = imgtools::check_imagebuffer_color_scheme(&image)?;
         let luma_img = imgtools::convert_t_imgbuffer_to_luma(&image, color_scheme)?;
-        self.prepare_template_picture_bw(luma_img, region, match_mode, Some(alias), None)
+        self.prepare_template_picture_bw(luma_img, region, match_mode, Some(alias), None, None)
     }
 
     #[cfg(not(feature = "lite"))]
@@ -428,7 +439,7 @@ impl crate::RustAutoGui {
         // RustAutoGui::check_alias_name(&alias)?;
         let color_scheme = imgtools::check_imagebuffer_color_scheme(&image)?;
         let luma_img = imgtools::convert_t_imgbuffer_to_luma(&image, color_scheme)?;
-        self.prepare_template_picture_bw(luma_img, region, match_mode, Some(alias), Some(threshold))
+        self.prepare_template_picture_bw(luma_img, region, match_mode, Some(alias), Some(threshold), None)
     }
     #[cfg(not(feature = "lite"))]
     /// Load template from encoded raw bytes and store prepared template data for multiple image search
@@ -441,7 +452,7 @@ impl crate::RustAutoGui {
     ) -> Result<(), AutoGuiError> {
         // RustAutoGui::check_alias_name(&alias)?;
         let image = image::load_from_memory(img_raw)?;
-        self.prepare_template_picture_bw(image.to_luma8(), region, match_mode, Some(alias), None)?;
+        self.prepare_template_picture_bw(image.to_luma8(), region, match_mode, Some(alias), None, None)?;
         Ok(())
     }
     #[cfg(not(feature = "lite"))]
@@ -461,6 +472,7 @@ impl crate::RustAutoGui {
             match_mode,
             Some(alias),
             Some(threshold),
+            None,
         )?;
         Ok(())
     }
@@ -473,7 +485,7 @@ impl crate::RustAutoGui {
         region: Option<(u32, u32, u32, u32)>,
         match_mode: MatchMode,
     ) -> Result<(), AutoGuiError> {
-        let template: ImageBuffer<Luma<u8>, Vec<u8>> = imgtools::load_image_bw(template_path)?;
-        self.prepare_template_picture_bw(template, region, match_mode, None, None)
+        let (template, mask) = imgtools::load_image_bwa(template_path)?;
+        self.prepare_template_picture_bw(template, region, match_mode, None, None, mask)
     }
 }

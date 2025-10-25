@@ -8,6 +8,8 @@ use crate::errors::AutoGuiError;
 use image::{
     error::LimitError, DynamicImage, GrayImage, ImageBuffer, Luma, Pixel, Primitive, Rgb, Rgba,
 };
+use image::buffer::ConvertBuffer;
+use image::LumaA;
 #[cfg(not(feature = "lite"))]
 use rustfft::{num_complex::Complex, num_traits::ToPrimitive};
 
@@ -21,6 +23,25 @@ pub fn load_image_bw(location: &str) -> Result<ImageBuffer<Luma<u8>, Vec<u8>>, A
 
     let gray_image: ImageBuffer<Luma<u8>, Vec<u8>> = img.to_luma8();
     Ok(gray_image)
+}
+#[cfg(not(feature = "lite"))]
+/// Loads image from the provided path and converts the alpha channel to a mask
+/// Returns image in image::ImageBuffer format
+pub fn load_image_bwa(location: &str) -> Result<(ImageBuffer<Luma<u8>, Vec<u8>>, Option<ImageBuffer<Luma<u8>, Vec<u8>>>), AutoGuiError> {
+    let img = image::ImageReader::open(location)?;
+
+    let img = img.decode()?;
+    let width = img.width();
+    let height = img.height();
+
+    let gray_alpha_image: ImageBuffer<LumaA<u8>, Vec<u8>> = img.to_luma_alpha8();
+    let gray_pixels = gray_alpha_image.pixels().map(|p| p.0[0]).collect();
+    let gray_image: GrayImage = GrayImage::from_vec(width, height, gray_pixels)
+        .ok_or_else(|| AutoGuiError::ImgError("Failed to extract luma.".to_string()))?;
+    let alpha_pixels = gray_alpha_image.pixels().map(|p| p.0[1]).collect();
+    let alpha_image: GrayImage = GrayImage::from_vec(width, height, alpha_pixels)
+        .ok_or_else(|| AutoGuiError::ImgError("Failed to extract alpha.".to_string()))?;
+    Ok((gray_image, if alpha_image.iter().any(|p| *p != 255) { Some(alpha_image) } else { None }))
 }
 #[cfg(not(feature = "lite"))]
 /// Loads image from the provided path and converts to RGBA format

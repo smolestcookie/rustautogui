@@ -57,6 +57,7 @@ pub mod tmpl_match_tests {
 
     fn segmented_run(
         template: &image::ImageBuffer<image::Luma<u8>, Vec<u8>>,
+        mask: Option<&image::ImageBuffer<image::Luma<u8>, Vec<u8>>>,
         main_image: &image::ImageBuffer<image::Luma<u8>, Vec<u8>>,
         target_positions: (i32, i32),
         template_path: &str,
@@ -68,7 +69,7 @@ pub mod tmpl_match_tests {
             threshold = Some(0.5);
             insert_str.push_str("custom");
         }
-        let template_data = segmented_ncc::prepare_template_picture(&template, &false, threshold);
+        let template_data = segmented_ncc::prepare_template_picture(&template, &false, threshold, mask);
         let template_data = match template_data {
             PreparedData::Segmented(data) => data,
             _ => panic!(),
@@ -100,6 +101,7 @@ pub mod tmpl_match_tests {
     #[cfg(feature = "opencl")]
     fn ocl_run(
         template: &image::ImageBuffer<image::Luma<u8>, Vec<u8>>,
+        mask: Option<&image::ImageBuffer<image::Luma<u8>, Vec<u8>>>,
         main_image: &image::ImageBuffer<image::Luma<u8>, Vec<u8>>,
         target_positions: (i32, i32),
         custom: bool,
@@ -132,7 +134,7 @@ pub mod tmpl_match_tests {
 
         //////////////////////////////////////////////////////////////////////// OPENCL V1
 
-        let template_data = segmented_ncc::prepare_template_picture(&template, &false, threshold);
+        let template_data = segmented_ncc::prepare_template_picture(&template, &false, threshold, mask);
         let template_data = match template_data {
             PreparedData::Segmented(x) => x,
             _ => panic!(),
@@ -195,13 +197,14 @@ pub mod tmpl_match_tests {
 
     fn fft_run(
         template: &image::ImageBuffer<image::Luma<u8>, Vec<u8>>,
+        mask: Option<&image::ImageBuffer<image::Luma<u8>, Vec<u8>>>,
         main_image: &image::ImageBuffer<image::Luma<u8>, Vec<u8>>,
         target_positions: (i32, i32),
         image_width: u32,
         image_height: u32,
     ) {
         // fft corr
-        let template_data = fft_ncc::prepare_template_picture(&template, image_width, image_height);
+        let template_data = fft_ncc::prepare_template_picture(&template, image_width, image_height, mask);
         let start = std::time::Instant::now();
         let locations = fft_ncc::fft_ncc(&main_image, 0.90, &template_data);
 
@@ -225,8 +228,8 @@ pub mod tmpl_match_tests {
     }
 
     fn testing_run(image_path: &str, template_path: &str, target_positions: (i32, i32)) {
-        let template: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
-            imgtools::load_image_bw(template_path).unwrap();
+        let (template, mask) =
+            imgtools::load_image_bwa(template_path).unwrap();
         let main_image: image::ImageBuffer<image::Luma<u8>, Vec<u8>> =
             imgtools::load_image_bw(image_path).unwrap();
         let (image_width, image_height) = main_image.dimensions();
@@ -236,6 +239,7 @@ pub mod tmpl_match_tests {
 
         segmented_run(
             &template,
+            mask.as_ref(),
             &main_image,
             target_positions,
             template_path,
@@ -243,6 +247,7 @@ pub mod tmpl_match_tests {
         ); // default cpu
         segmented_run(
             &template,
+            mask.as_ref(),
             &main_image,
             target_positions,
             template_path,
@@ -250,6 +255,7 @@ pub mod tmpl_match_tests {
         ); // cpu custom
         ocl_run(
             &template,
+            mask.as_ref(),
             &main_image,
             target_positions,
             false,
@@ -261,6 +267,7 @@ pub mod tmpl_match_tests {
         );
         ocl_run(
             &template,
+            mask.as_ref(),
             &main_image,
             target_positions,
             false,
@@ -272,6 +279,7 @@ pub mod tmpl_match_tests {
         );
         ocl_run(
             &template,
+            mask.as_ref(),
             &main_image,
             target_positions,
             true,
@@ -283,6 +291,7 @@ pub mod tmpl_match_tests {
         );
         ocl_run(
             &template,
+            mask.as_ref(),
             &main_image,
             target_positions,
             true,
@@ -294,6 +303,7 @@ pub mod tmpl_match_tests {
         );
         fft_run(
             &template,
+            mask.as_ref(),
             &main_image,
             target_positions,
             image_width,

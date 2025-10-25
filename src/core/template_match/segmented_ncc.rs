@@ -19,6 +19,7 @@ use rustfft::num_traits::Pow;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
+use image::buffer::ConvertBuffer;
 
 pub fn fast_ncc_template_match(
     image: &ImageBuffer<Luma<u8>, Vec<u8>>,
@@ -255,6 +256,7 @@ pub fn prepare_template_picture(
     template: &ImageBuffer<Luma<u8>, Vec<u8>>,
     debug: &bool,
     corr_threshold: Option<f32>,
+    mask: Option<&ImageBuffer<Luma<u8>, Vec<u8>>>,
 ) -> PreparedData {
     ///
     ///preprocess all the picture subimages
@@ -278,30 +280,43 @@ pub fn prepare_template_picture(
     /// After that merging is performed, which connects neighbouring segments of same contact axis size and same value
     let (template_width, template_height) = template.dimensions();
     let mut sum_template = 0.0;
+    let mut pixel_number: u32 = 0;
+
+    let mut template_f32: ImageBuffer<Luma<f32>, Vec<f32>> = ImageBuffer::new(template_width, template_height);
+    for (x, y, p) in template_f32.enumerate_pixels_mut() {
+        // Need to do this because convert converts from 0 to 255 to 0.0 to 1.0. And we just want to cast to float.
+        *p = Luma([template.get_pixel(x, y).0[1] as f32]);
+    }
+    let mask: ImageBuffer<Luma<f32>, Vec<f32>> = match mask {
+        Some(mask) => mask.convert(),
+        None => ImageBuffer::from_pixel(template_width, template_height, Luma([1f32])),
+    };
 
     if *debug {
-        let pixel_number = template_height * template_width;
         println! {"starting with {pixel_number}"};
     }
     // calculate needed sums
     for y in 0..template_height {
         for x in 0..template_width {
-            let template_value = template.get_pixel(x, y)[0] as f32;
-            sum_template += template_value;
+            let template_value = template_f32.get_pixel(x, y)[0];
+            let mask_value = mask.get_pixel(x, y)[0];
+            sum_template += template_value * mask_value;
+            pixel_number += if mask_value > 0.0 { 1 } else { 0 };
         }
     }
-    let mean_template_value = sum_template / (template_height * template_width) as f32;
+    let mean_template_value = sum_template / pixel_number as f32;
 
     let mut template_sum_squared_deviations: f32 = 0.0;
     for y in 0..template_height {
         for x in 0..template_width {
-            let template_value = template.get_pixel(x, y)[0] as f32;
-            let squared_deviation = (template_value - mean_template_value).powf(2.0);
+            let template_value = template_f32.get_pixel(x, y)[0];
+            let mask_value = mask.get_pixel(x, y)[0];
+            let squared_deviation = (template_value - mean_template_value).powf(2.0) * mask_value;
             template_sum_squared_deviations += squared_deviation;
         }
     }
     let avg_deviation_of_template =
-        (template_sum_squared_deviations / (template_width * template_height) as f32).sqrt();
+        (template_sum_squared_deviations / pixel_number as f32).sqrt();
 
     // create fast segmented image
     let (
@@ -315,6 +330,7 @@ pub fn prepare_template_picture(
         avg_deviation_of_template,
         "fast",
         corr_threshold,
+        mask,
     );
     // create slow segmented image
     let (
@@ -328,6 +344,7 @@ pub fn prepare_template_picture(
         avg_deviation_of_template,
         "slow",
         corr_threshold,
+        mask,
     );
 
     // merge pictures segments

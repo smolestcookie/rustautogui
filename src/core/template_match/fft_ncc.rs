@@ -154,6 +154,7 @@ pub fn prepare_template_picture(
     template: &ImageBuffer<Luma<u8>, Vec<u8>>,
     image_width: u32,
     image_height: u32,
+    mask: Option<&ImageBuffer<Luma<u8>, Vec<u8>>>,
 ) -> FFTData {
     /// precalculate all the neccessary data so its not slowing down main process
     /// returning template in frequency domain, with calculated conjugate
