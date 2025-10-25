@@ -387,6 +387,7 @@ impl Keyboard {
         key_map.insert(String::from("}"), (0xDD, true)); // ] } VK_OEM_6
         key_map.insert(String::from("|"), (0xDC, true)); // \ | VK_OEM_5
         key_map.insert(String::from("\""), (0xDE, true)); // ' " VK_OEM_7
+        key_map.insert(String::from("backquote"), (0xC0, true)); // ` VK_BACK_QUOTE
         key_map
     }
 }
